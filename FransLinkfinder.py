@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
 #
-#  BurpLinkFinder - Find links within JS files.
+#  BurpJSLinkFinder Enhanced - Link & Sensitive Data Finder
+#  Enhanced version with sensitive data detection capabilities
 #
-#  Copyright (c) 2019 Frans Hendrik Botes
-#  Credit to https://github.com/GerbenJavado/LinkFinder for the idea and regex
+#  Original Copyright (c) 2019 Frans Hendrik Botes
+#  Enhanced Version (c) 2026
+#
+#  Original Credit: https://github.com/GerbenJavado/LinkFinder for the idea and regex
 #
 from burp import IBurpExtender, IScannerCheck, IScanIssue, ITab
 from java.io import PrintWriter
@@ -33,13 +37,20 @@ class Run(Runnable):
 
 JSExclusionList = ['jquery', 'google-analytics','gpt.js']
 
+# MIME types that indicate JavaScript (Burp/Content-Type can vary)
+# e.g. script, application/javascript, application/x-javascript (DependencyHandler.axd, etc.)
+JS_MIME_SUBSTRINGS = ('script', 'javascript', 'x-javascript', 'x-js')
+
+# Enable/disable sensitive data detection
+ENABLE_SENSITIVE_DATA_DETECTION = True
+
 class BurpExtender(IBurpExtender, IScannerCheck, ITab):
     def registerExtenderCallbacks(self, callbacks):
         self.callbacks = callbacks
         self.helpers = callbacks.getHelpers()
-        callbacks.setExtensionName("BurpJSLinkFinder")
+        callbacks.setExtensionName("BurpJSLinkFinder + Sensitive Data")
 
-        callbacks.issueAlert("BurpJSLinkFinder Passive Scanner enabled")
+        callbacks.issueAlert("BurpJSLinkFinder + Sensitive Data Scanner enabled")
 
         stdout = PrintWriter(callbacks.getStdout(), True)
         stderr = PrintWriter(callbacks.getStderr(), True)
@@ -121,22 +132,46 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
         try:
             urlReq = ihrr.getUrl()
             testString = str(urlReq)
-            linkA = linkAnalyse(ihrr,self.helpers)
-            # check if JS file
-            if ".js" in str(urlReq):
-                # Exclude casual JS files
-                if any(x in testString for x in JSExclusionList):
-                    print("\n" + "[-] URL excluded " + str(urlReq))
-                else:
-                    self.outputTxtArea.append("\n" + "[+] Valid URL found: " + str(urlReq))
-                    issueText = linkA.analyseURL()
-                    for counter, issueText in enumerate(issueText):
-                            #print("TEST Value returned SUCCESS")
-                            self.outputTxtArea.append("\n" + "\t" + str(counter)+' - ' +issueText['link'])   
-
-                    issues = ArrayList()
-                    issues.add(SRI(ihrr, self.helpers))
-                    return issues
+            # Consider as JS: URL contains ".js" OR path ends with /js OR response MIME is JavaScript
+            mime_type = self.helpers.analyzeResponse(ihrr.getResponse()).getStatedMimeType()
+            is_js_url = ".js" in testString or testString.rstrip("/").endswith("/js")
+            is_js_response = mime_type and any(s in mime_type.lower() for s in JS_MIME_SUBSTRINGS)
+            if not (is_js_url or is_js_response):
+                return None
+            linkA = linkAnalyse(ihrr, self.helpers)
+            # Exclude casual JS files by URL
+            if any(x in testString for x in JSExclusionList):
+                print("\n" + "[-] URL excluded " + str(urlReq))
+            else:
+                self.outputTxtArea.append("\n" + "[+] Valid URL found: " + str(urlReq))
+                issues = ArrayList()
+                
+                # Analizar enlaces
+                issueText = linkA.analyseURL()
+                for counter, issueText in enumerate(issueText):
+                    self.outputTxtArea.append("\n" + "\t[LINK] " + str(counter) + ' - ' + issueText['link'])
+                
+                # Analizar información sensible (si está habilitado)
+                if ENABLE_SENSITIVE_DATA_DETECTION:
+                    try:
+                        encoded_resp = binascii.b2a_base64(ihrr.getResponse())
+                        decoded_resp = base64.b64decode(encoded_resp)
+                        sensitive_analyzer = SensitiveDataAnalyzer(ihrr, self.helpers)
+                        sensitive_findings = sensitive_analyzer.analyze(decoded_resp)
+                        
+                        if sensitive_findings:
+                            self.outputTxtArea.append("\n" + "\t[!] Informacion sensible detectada:")
+                            for finding in sensitive_findings:
+                                severity_marker = "[HIGH]" if finding['severity'] == 'High' else "[MEDIUM]" if finding['severity'] == 'Medium' else "[LOW]"
+                                self.outputTxtArea.append("\n" + "\t  " + severity_marker + " " + finding['type'] + ": " + finding['value'][:100])
+                            # Crear issue separado para información sensible
+                            issues.add(SensitiveDataIssue(ihrr, self.helpers, sensitive_findings))
+                    except Exception as e:
+                        print("Error analizando información sensible: " + str(e))
+                
+                # Issue para enlaces (siempre)
+                issues.add(SRI(ihrr, self.helpers))
+                return issues
         except UnicodeEncodeError:
             print ("Error in URL decode.")
         return None
@@ -146,7 +181,7 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
         return -1
 
     def extensionUnloaded(self):
-        print "Burp JS LinkFinder unloaded"
+        print("Burp JS LinkFinder unloaded")
         return
 
 class linkAnalyse():
@@ -156,45 +191,56 @@ class linkAnalyse():
         self.reqres = reqres
         
 
+    # Delimiters: " ' ` (template literals)
+    # Extensions: + svc, asmx, do, cgi, pl, cfm, config; paths with 1-6 char extensions
     regex_str = """
     
-      (?:"|')                               # Start newline delimiter
+      (?:"|'|`)                             # Start delimiter: quote or backtick
     
       (
-        ((?:[a-zA-Z]{1,10}://|//)           # Match a scheme [a-Z]*1-10 or //
-        [^"'/]{1,}\.                        # Match a domainname (any character + dot)
-        [a-zA-Z]{2,}[^"']{0,})              # The domainextension and/or path
+        ((?:[a-zA-Z]{1,10}://|//)           # Scheme: http(s), ws(s), //, etc.
+        [^"'`/]{1,}\.                       # Domain (must contain a dot)
+        [a-zA-Z]{2,}[^"'`]{0,})            # TLD and path
     
         |
     
-        ((?:/|\.\./|\./)                    # Start with /,../,./
-        [^"'><,;| *()(%%$^/\\\[\]]          # Next character can't be...
-        [^"'><,;|()]{1,})                   # Rest of the characters can't be
+        ((?:/|\.\./|\./)                    # Paths: /, ../, ./
+        [^"'`><,;| *()(%%$^/\\\[\]]         # First char restrictions
+        [^"'`><,;|()]{1,})                  # Rest of path
     
         |
     
-        ([a-zA-Z0-9_\-/]{1,}/               # Relative endpoint with /
-        [a-zA-Z0-9_\-/]{1,}                 # Resource name
-        \.(?:[a-zA-Z]{1,4}|action)          # Rest + extension (length 1-4 or action)
-        (?:[\?|/][^"|']{0,}|))              # ? mark with parameters
+        ([a-zA-Z0-9_\-/]{1,}/               # Relative: segment/
+        [a-zA-Z0-9_\-/]{1,}                 # resource name
+        \.(?:[a-zA-Z]{1,6}|action)          # .ext (1-6 chars) or .action
+        (?:[\?|/][^"'`|]{0,}|))            # Optional ? or / and params
     
         |
     
-        ([a-zA-Z0-9_\-]{1,}                 # filename
-        \.(?:php|asp|aspx|jsp|json|
-             action|html|js|txt|xml)             # . + extension
-        (?:\?[^"|']{0,}|))                  # ? mark with parameters
+        ([a-zA-Z0-9_\-]{1,}                 # Filename.extension
+        \.(?:php|asp|aspx|ashx|asmx|svc|jsp|json|do|cgi|pl|cfm|
+             action|html|js|txt|xml|config) # Common backend/API extensions
+        (?:\?[^"'`|]{0,}|))                # Optional query
+    
+        |
+    
+        ([a-zA-Z0-9_\-]{1,}                 # Handler without extension
+        \?[^"'`|]{0,})                      # ?query
     
       )
     
-      (?:"|')                               # End newline delimiter
+      (?:"|'|`)                             # End delimiter
     
     """     
 
     def	parser_file(self, content, regex_str, mode=1, more_regex=None, no_dup=1):
         #print ("TEST parselfile #2")
         regex = re.compile(regex_str, re.VERBOSE)
-        items = [{"link": m.group(1)} for m in re.finditer(regex, content)]
+        items = []
+        for m in re.finditer(regex, content):
+            link = next((g for g in m.groups() if g is not None), None)
+            if link:
+                items.append({"link": link})
         if no_dup:
             # Remove duplication
             all_links = set()
@@ -224,18 +270,248 @@ class linkAnalyse():
         thread.start()
 
     def analyseURL(self):
-        
-        endpoints = ""
-        #print("TEST AnalyseURL #1")
-        mime_type=self.helpers.analyzeResponse(self.reqres.getResponse()).getStatedMimeType()
-        if mime_type.lower() == 'script':
-                url = self.reqres.getUrl()
-                encoded_resp=binascii.b2a_base64(self.reqres.getResponse())
-                decoded_resp=base64.b64decode(encoded_resp)
-                endpoints=self.parser_file(decoded_resp, self.regex_str)
-                #print("TEST AnalyseURL #2")
-                return endpoints
+        endpoints = []
+        mime_type = self.helpers.analyzeResponse(self.reqres.getResponse()).getStatedMimeType()
+        if not mime_type or not any(s in mime_type.lower() for s in JS_MIME_SUBSTRINGS):
+            return endpoints
+        try:
+            encoded_resp = binascii.b2a_base64(self.reqres.getResponse())
+            decoded_resp = base64.b64decode(encoded_resp)
+            endpoints = self.parser_file(decoded_resp, self.regex_str)
+        except Exception:
+            pass
         return endpoints
+
+
+class SensitiveDataAnalyzer():
+    """Detecta información sensible: credenciales, tokens, API keys, etc."""
+    
+    def __init__(self, reqres, helpers):
+        self.helpers = helpers
+        self.reqres = reqres
+        
+    # Patrones para detectar información sensible
+    SENSITIVE_PATTERNS = [
+        # API Keys comunes - solo cuando el nombre de variable es explícitamente api_key/apikey/apiKey
+        {
+            'name': 'API Key',
+            'pattern': r'(?:api[_-]?key|apikey|apiKey|API_KEY|APIKEY)[\'"\s:=]+["\']?([A-Za-z0-9_\-/+=]{20,})["\']?(?=[,;\s\)\]}])',
+            'severity': 'High',
+            'flags': re.IGNORECASE
+        },
+        # JWT Tokens (formato: eyJ...)
+        {
+            'name': 'JWT Token',
+            'pattern': r'(?:eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})',
+            'severity': 'High'
+        },
+        # OAuth/Bearer Tokens
+        {
+            'name': 'Bearer Token',
+            'pattern': r'(?:bearer|token|access[_-]?token)["\s:=]+([a-zA-Z0-9_\-\.]{20,})',
+            'severity': 'High',
+            'flags': re.IGNORECASE
+        },
+        # AWS Access Keys (AKIA...)
+        {
+            'name': 'AWS Access Key',
+            'pattern': r'(?:AKIA[0-9A-Z]{16})',
+            'severity': 'High'
+        },
+        # AWS Secret Keys
+        {
+            'name': 'AWS Secret Key',
+            'pattern': r'(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?key)["\s:=]+([a-zA-Z0-9/+=]{40})',
+            'severity': 'High',
+            'flags': re.IGNORECASE
+        },
+        # Passwords hardcodeados
+        {
+            'name': 'Hardcoded Password',
+            'pattern': r'(?:password|passwd|pwd)["\s:=]+["\']([^"\']{8,})["\']',
+            'severity': 'High',
+            'flags': re.IGNORECASE
+        },
+        # Database connection strings
+        {
+            'name': 'Database Connection String',
+            'pattern': r'(?:mysql|postgresql|mongodb|mssql|oracle)://[^\s"\'\`]+',
+            'severity': 'High',
+            'flags': re.IGNORECASE
+        },
+        # Private Keys (RSA, SSH)
+        {
+            'name': 'Private Key',
+            'pattern': r'(?:-----BEGIN (?:RSA |DSA |EC )?PRIVATE KEY-----[\s\S]{100,}-----END (?:RSA |DSA |EC )?PRIVATE KEY-----)',
+            'severity': 'High'
+        },
+        # Email addresses (pueden ser sensibles)
+        {
+            'name': 'Email Address',
+            'pattern': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+            'severity': 'Low'
+        },
+        # URLs con credenciales (user:pass@host)
+        {
+            'name': 'URL with Credentials',
+            'pattern': r'(?:https?|ftp)://[^\s"\'\`:@]+:[^\s"\'\`:@]+@[^\s"\'\`]+',
+            'severity': 'High'
+        },
+        # GitHub tokens
+        {
+            'name': 'GitHub Token',
+            'pattern': r'(?:ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|ghr_[a-zA-Z0-9]{76})',
+            'severity': 'High'
+        },
+        # Stripe keys
+        {
+            'name': 'Stripe Key',
+            'pattern': r'(?:sk_live_[a-zA-Z0-9]{24,}|pk_live_[a-zA-Z0-9]{24,}|sk_test_[a-zA-Z0-9]{24,}|pk_test_[a-zA-Z0-9]{24,})',
+            'severity': 'High'
+        },
+        # Generic secret/credential patterns
+        {
+            'name': 'Secret/Credential',
+            'pattern': r'(?:secret|credential|auth[_-]?token|api[_-]?secret)["\s:=]+["\']([a-zA-Z0-9_\-/+=]{16,})["\']',
+            'severity': 'Medium',
+            'flags': re.IGNORECASE
+        }
+    ]
+    
+    def analyze(self, content):
+        """Analiza el contenido y retorna lista de información sensible encontrada."""
+        findings = []
+        seen = set()  # Para evitar duplicados
+        
+        for pattern_def in self.SENSITIVE_PATTERNS:
+            try:
+                flags = pattern_def.get('flags', 0)
+                regex = re.compile(pattern_def['pattern'], flags)
+                for match in regex.finditer(content):
+                    # Extraer el valor capturado o el match completo
+                    if match.groups():
+                        value = match.group(1) if match.lastindex else match.group(0)
+                    else:
+                        value = match.group(0)
+                    
+                    # Evitar falsos positivos comunes
+                    if self._is_false_positive(value):
+                        continue
+                    
+                    # Evitar duplicados
+                    key = (pattern_def['name'], value[:50])  # Primeros 50 chars para comparar
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    
+                    findings.append({
+                        'type': pattern_def['name'],
+                        'value': value[:200],  # Limitar longitud para UI
+                        'severity': pattern_def['severity'],
+                        'position': match.start()
+                    })
+            except Exception as e:
+                # Si un patrón falla, continuar con los demás
+                print("Error en patrón %s: %s" % (pattern_def['name'], str(e)))
+                continue
+        
+        return findings
+    
+    def _is_false_positive(self, value):
+        """Filtra falsos positivos comunes."""
+        # Valores comunes que no son credenciales reales
+        false_positives = [
+            'example.com', 'localhost', '127.0.0.1',
+            'your-api-key', 'your-secret', 'placeholder',
+            'test', 'demo', 'sample', 'dummy'
+        ]
+        value_lower = value.lower()
+        if any(fp in value_lower for fp in false_positives):
+            return True
+        
+        # Excluir nombres de funciones/métodos comunes de JavaScript (camelCase o con mayúsculas)
+        # Si el valor parece un nombre de función (empieza con minúscula, tiene camelCase), probablemente es falso positivo
+        if len(value) > 15 and value[0].islower() and any(c.isupper() for c in value[1:]):
+            # Verificar si parece un nombre de función común
+            js_function_patterns = [
+                'handler', 'callback', 'function', 'method', 'component',
+                'ref', 'mount', 'unmount', 'will', 'did', 'setstate',
+                'getelement', 'addevent', 'removeevent', 'preventdefault',
+                'inner', 'outer', 'slider', 'toggle', 'enable', 'disable'
+            ]
+            value_lower_words = value_lower.replace('_', ' ').replace('-', ' ')
+            if any(pattern in value_lower_words for pattern in js_function_patterns):
+                return True
+        
+        return False
+
+
+class SensitiveDataIssue(IScanIssue):
+    """Issue para información sensible encontrada en JS."""
+    
+    def __init__(self, reqres, helpers, findings):
+        self.helpers = helpers
+        self.reqres = reqres
+        self.findings = findings
+        
+    def getHost(self):
+        return self.reqres.getHost()
+    
+    def getPort(self):
+        return self.reqres.getPort()
+    
+    def getProtocol(self):
+        return self.reqres.getProtocol()
+    
+    def getUrl(self):
+        return self.reqres.getUrl()
+    
+    def getIssueName(self):
+        return "Sensitive Data Found in JavaScript"
+    
+    def getIssueType(self):
+        return 0x08000000
+    
+    def getSeverity(self):
+        # Usar la severidad más alta encontrada
+        severities = [f['severity'] for f in self.findings]
+        if 'High' in severities:
+            return "High"
+        elif 'Medium' in severities:
+            return "Medium"
+        return "Low"
+    
+    def getConfidence(self):
+        return "Certain"
+    
+    def getIssueBackground(self):
+        return "JavaScript files may contain hardcoded credentials, API keys, tokens, or other sensitive information."
+    
+    def getRemediationBackground(self):
+        return "Remove sensitive data from client-side code. Use environment variables, secure storage, or server-side APIs."
+    
+    def getIssueDetail(self):
+        detail = "Sensitive data found in JS file: <b>%s</b><br><br>" % self.reqres.getUrl().toString()
+        detail += "<b>Findings:</b><ul>"
+        for finding in self.findings[:10]:  # Limitar a 10 para no sobrecargar
+            detail += "<li><b>%s</b> (%s): %s</li>" % (
+                finding['type'], 
+                finding['severity'], 
+                self.helpers.urlEncode(finding['value'][:100])
+            )
+        if len(self.findings) > 10:
+            detail += "<li>... and %d more</li>" % (len(self.findings) - 10)
+        detail += "</ul>"
+        return detail
+    
+    def getRemediationDetail(self):
+        return None
+    
+    def getHttpMessages(self):
+        return [self.reqres]
+    
+    def getHttpService(self):
+        return self.reqres.getHttpService()
 
 
 class SRI(IScanIssue,ITab):
@@ -287,7 +563,3 @@ class SRI(IScanIssue,ITab):
         
     def getHttpService(self):
         return self.reqres.getHttpService()
-        
-        
-if __name__ in ('__main__', 'main'):
-    EventQueue.invokeLater(Run(BurpExtender))

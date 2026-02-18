@@ -109,7 +109,6 @@ Edit the `SENSITIVE_PATTERNS` list in the `SensitiveDataAnalyzer` class to add o
 ### Links Detected
 - Full URLs: `https://api.example.com/endpoint`
 - Relative paths: `/api/users`, `../config.json`
-- Handlers: `DnnImageHandler.ashx?mode=securefile&fileId=123`
 - File references: `utils.js`, `config.php`
 
 ### Sensitive Data Detected

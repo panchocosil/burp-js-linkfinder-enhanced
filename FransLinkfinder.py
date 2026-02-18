@@ -375,6 +375,23 @@ class SensitiveDataAnalyzer():
             'pattern': r'(?:secret|credential|auth[_-]?token|api[_-]?secret)["\s:=]+["\']([a-zA-Z0-9_\-/+=]{16,})["\']',
             'severity': 'Medium',
             'flags': re.IGNORECASE
+        },
+        # Hashes sueltos (standalone) - MD5 32 hex, SHA1 40 hex, SHA256 64 hex
+        # Word boundary para no matchear dentro de cadenas mas largas
+        {
+            'name': 'MD5 Hash (standalone)',
+            'pattern': r'\b([a-fA-F0-9]{32})\b',
+            'severity': 'Low'
+        },
+        {
+            'name': 'SHA1 Hash (standalone)',
+            'pattern': r'\b([a-fA-F0-9]{40})\b',
+            'severity': 'Low'
+        },
+        {
+            'name': 'SHA256 Hash (standalone)',
+            'pattern': r'\b([a-fA-F0-9]{64})\b',
+            'severity': 'Low'
         }
     ]
     
@@ -398,8 +415,11 @@ class SensitiveDataAnalyzer():
                     if self._is_false_positive(value):
                         continue
                     
-                    # Evitar duplicados
-                    key = (pattern_def['name'], value[:50])  # Primeros 50 chars para comparar
+                    # Evitar duplicados: para hashes (valor corto y solo hex) usar valor completo
+                    if len(value) <= 64 and re.match(r'^[a-fA-F0-9]+$', value):
+                        key = (pattern_def['name'], value)
+                    else:
+                        key = (pattern_def['name'], value[:50])
                     if key in seen:
                         continue
                     seen.add(key)
@@ -428,6 +448,11 @@ class SensitiveDataAnalyzer():
         value_lower = value.lower()
         if any(fp in value_lower for fp in false_positives):
             return True
+        
+        # Excluir hashes triviales (todo ceros o mismo caracter repetido)
+        if re.match(r'^[a-fA-F0-9]+$', value) and len(value) in (32, 40, 64):
+            if len(set(value.lower())) <= 1:
+                return True
         
         # Excluir nombres de funciones/métodos comunes de JavaScript (camelCase o con mayúsculas)
         # Si el valor parece un nombre de función (empieza con minúscula, tiene camelCase), probablemente es falso positivo

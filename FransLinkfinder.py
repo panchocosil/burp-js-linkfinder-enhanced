@@ -47,6 +47,12 @@ ENABLE_SENSITIVE_DATA_DETECTION = True
 LOAD_MESSAGE = "Burp JS LinkFinder loaded."
 VERSION_NOTICE = "Modified/enhanced version based on original work by Frans Hendrik Botes (2019)"
 MAX_LOG_CHARS = 200000
+MAX_ISSUE_ENDPOINTS = 10
+
+def escape_html(text):
+    return (text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
 
 class BurpExtender(IBurpExtender, IScannerCheck, ITab):
     def registerExtenderCallbacks(self, callbacks):
@@ -164,9 +170,9 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
                 issues = ArrayList()
                 
                 # Analizar enlaces
-                issueText = linkA.analyseURL()
-                for counter, issueText in enumerate(issueText):
-                    self.appendLog("\n" + "\t[LINK] " + str(counter) + ' - ' + issueText['link'])
+                endpoints = linkA.analyseURL()
+                for counter, endpoint in enumerate(endpoints):
+                    self.appendLog("\n" + "\t[LINK] " + str(counter) + ' - ' + endpoint['link'])
                 
                 # Analizar información sensible (si está habilitado)
                 if ENABLE_SENSITIVE_DATA_DETECTION:
@@ -187,7 +193,7 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
                         print("Error analizando información sensible: " + str(e))
                 
                 # Issue para enlaces (siempre)
-                issues.add(SRI(ihrr, self.helpers))
+                issues.add(SRI(ihrr, self.helpers, endpoints))
                 return issues
         except UnicodeEncodeError:
             print ("Error in URL decode.")
@@ -587,9 +593,10 @@ class SensitiveDataIssue(IScanIssue):
 
 
 class SRI(IScanIssue,ITab):
-    def __init__(self, reqres, helpers):
+    def __init__(self, reqres, helpers, endpoints):
         self.helpers = helpers
         self.reqres = reqres
+        self.endpoints = endpoints or []
 
     def getHost(self):
         return self.reqres.getHost()
@@ -622,8 +629,18 @@ class SRI(IScanIssue,ITab):
         return "This is an <b>informational</b> finding only.<br>"
 
     def getIssueDetail(self):
-        return str("Burp Scanner has analysed the following JS file for links: <b>"
+        detail = ("Burp Scanner has analysed the following JS file for links: <b>"
                       "%s</b><br><br>" % (self.reqres.getUrl().toString()))
+        if not self.endpoints:
+            return detail + "No endpoints were extracted for this response."
+
+        detail += "<b>Sample endpoints found:</b><ul>"
+        for endpoint in self.endpoints[:MAX_ISSUE_ENDPOINTS]:
+            detail += "<li>%s</li>" % escape_html(endpoint['link'][:200])
+        if len(self.endpoints) > MAX_ISSUE_ENDPOINTS:
+            detail += "<li>... and %d more</li>" % (len(self.endpoints) - MAX_ISSUE_ENDPOINTS)
+        detail += "</ul>"
+        return detail
 
     def getRemediationDetail(self):
         return None

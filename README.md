@@ -129,7 +129,7 @@ Edit the `SENSITIVE_PATTERNS` list in the `SensitiveDataAnalyzer` class to add o
 - `script` (Burp's generic type)
 
 ### File Extensions Detected
-- `.js`, `.ashx`, `.php`, `.asp`, `.aspx`, `.jsp`, `.json`, `.action`, `.html`, `.txt`, `.xml`, `.config`
+- `.js`, `.mjs`, `.cjs`, `.jsx`, `.ashx`, `.php`, `.asp`, `.aspx`, `.jsp`, `.json`, `.action`, `.html`, `.htm`, `.ts`, `.tsx`, `.vue`, `.txt`, `.xml`, `.yaml`, `.yml`, `.config`, `.map`
 - Handlers without extensions: `Handler?param=value`
 
 ### False Positive Filtering

@@ -20,15 +20,15 @@ REGEX_STR = r"""
     |
 
     ([a-zA-Z0-9_\-/]{1,}/               # Relative: segment/
-    [a-zA-Z0-9_\-/]{1,}                 # resource name
+    [a-zA-Z0-9_.\-/]{1,}                # resource name (allow dotted filenames)
     \.(?:[a-zA-Z]{1,6}|action)          # .ext (1-6 chars) or .action
     (?:[\?|/][^"'`|]{0,}|))            # Optional ? or / and params
 
     |
 
-    ([a-zA-Z0-9_\-]{1,}                 # Filename.extension
+    ([a-zA-Z0-9_.\-]{1,}                # Filename.extension (allow dotted filenames)
     \.(?:php|asp|aspx|ashx|asmx|svc|jsp|json|do|cgi|pl|cfm|
-         action|html|js|txt|xml|config) # Common backend/API extensions
+         action|html|htm|js|mjs|cjs|jsx|ts|tsx|vue|txt|xml|yaml|yml|config|map) # Common backend/API extensions
     (?:\?[^"'`|]{0,}|))                # Optional query
 
     |
@@ -73,6 +73,14 @@ var rel = "../utils.js";
 var ws = `wss://realtime.ejemplo.com/socket`;
 var svc = "https://api.com/Service.svc/GetData";
 var config = "/app/settings.config";
+var sourceMap = "assets/app.bundle.js.map";
+var component = "../components/LoginForm.vue";
+var tsModule = "./api/client.ts";
+var jsxView = "views/Dashboard.jsx";
+var esmModule = "./runtime/bootstrap.mjs";
+var cjsModule = "../server/index.cjs";
+var yamlConfig = "/config/openapi.yaml";
+var ymlConfig = "./pipelines/build.yml";
 """
 
 

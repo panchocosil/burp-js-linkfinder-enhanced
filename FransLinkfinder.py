@@ -211,15 +211,15 @@ class linkAnalyse():
         |
     
         ([a-zA-Z0-9_\-/]{1,}/               # Relative: segment/
-        [a-zA-Z0-9_\-/]{1,}                 # resource name
+        [a-zA-Z0-9_.\-/]{1,}                # resource name (allow dotted filenames)
         \.(?:[a-zA-Z]{1,6}|action)          # .ext (1-6 chars) or .action
         (?:[\?|/][^"'`|]{0,}|))            # Optional ? or / and params
     
         |
     
-        ([a-zA-Z0-9_\-]{1,}                 # Filename.extension
+        ([a-zA-Z0-9_.\-]{1,}                # Filename.extension (allow dotted filenames)
         \.(?:php|asp|aspx|ashx|asmx|svc|jsp|json|do|cgi|pl|cfm|
-             action|html|js|txt|xml|config) # Common backend/API extensions
+             action|html|htm|js|mjs|cjs|jsx|ts|tsx|vue|txt|xml|yaml|yml|config|map) # Common backend/API extensions
         (?:\?[^"'`|]{0,}|))                # Optional query
     
         |

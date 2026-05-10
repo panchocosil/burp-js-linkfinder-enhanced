@@ -46,6 +46,7 @@ ENABLE_SENSITIVE_DATA_DETECTION = True
 
 LOAD_MESSAGE = "Burp JS LinkFinder loaded."
 VERSION_NOTICE = "Modified/enhanced version based on original work by Frans Hendrik Botes (2019)"
+MAX_LOG_CHARS = 200000
 
 class BurpExtender(IBurpExtender, IScannerCheck, ITab):
     def registerExtenderCallbacks(self, callbacks):
@@ -122,6 +123,19 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
     def clearLog(self, event):
           self.outputTxtArea.setText(LOAD_MESSAGE + "\n" + VERSION_NOTICE + "\n" )
 
+    def appendLog(self, message):
+        self.outputTxtArea.append(message)
+        log_text = self.outputTxtArea.getText()
+        if len(log_text) <= MAX_LOG_CHARS:
+            return
+        overflow = len(log_text) - MAX_LOG_CHARS
+        trim_at = log_text.find("\n", overflow)
+        if trim_at == -1:
+            trimmed_text = log_text[-MAX_LOG_CHARS:]
+        else:
+            trimmed_text = log_text[trim_at + 1:]
+        self.outputTxtArea.setText(trimmed_text)
+
     def exportLog(self, event):
         chooseFile = JFileChooser()
         ret = chooseFile.showDialog(self.logPane, "Choose file")
@@ -146,13 +160,13 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
             if any(x in testString for x in JSExclusionList):
                 print("\n" + "[-] URL excluded " + str(urlReq))
             else:
-                self.outputTxtArea.append("\n" + "[+] Valid URL found: " + str(urlReq))
+                self.appendLog("\n" + "[+] Valid URL found: " + str(urlReq))
                 issues = ArrayList()
                 
                 # Analizar enlaces
                 issueText = linkA.analyseURL()
                 for counter, issueText in enumerate(issueText):
-                    self.outputTxtArea.append("\n" + "\t[LINK] " + str(counter) + ' - ' + issueText['link'])
+                    self.appendLog("\n" + "\t[LINK] " + str(counter) + ' - ' + issueText['link'])
                 
                 # Analizar información sensible (si está habilitado)
                 if ENABLE_SENSITIVE_DATA_DETECTION:
@@ -163,10 +177,10 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
                         sensitive_findings = sensitive_analyzer.analyze(decoded_resp)
                         
                         if sensitive_findings:
-                            self.outputTxtArea.append("\n" + "\t[!] Informacion sensible detectada:")
+                            self.appendLog("\n" + "\t[!] Informacion sensible detectada:")
                             for finding in sensitive_findings:
                                 severity_marker = "[HIGH]" if finding['severity'] == 'High' else "[MEDIUM]" if finding['severity'] == 'Medium' else "[LOW]"
-                                self.outputTxtArea.append("\n" + "\t  " + severity_marker + " " + finding['type'] + ": " + finding['value'][:100])
+                                self.appendLog("\n" + "\t  " + severity_marker + " " + finding['type'] + ": " + finding['value'][:100])
                             # Crear issue separado para información sensible
                             issues.add(SensitiveDataIssue(ihrr, self.helpers, sensitive_findings))
                     except Exception as e:

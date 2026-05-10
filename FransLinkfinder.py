@@ -3,8 +3,8 @@
 #  BurpJSLinkFinder Enhanced - Link & Sensitive Data Finder
 #  Enhanced version with sensitive data detection capabilities
 #
-#  Original Copyright (c) 2019 Frans Hendrik Botes
-#  Enhanced Version (c) 2026
+#  Original work by Frans Hendrik Botes (2019)
+#  This repository contains a modified/enhanced version and is not the original release
 #
 #  Original Credit: https://github.com/GerbenJavado/LinkFinder for the idea and regex
 #
@@ -44,6 +44,9 @@ JS_MIME_SUBSTRINGS = ('script', 'javascript', 'x-javascript', 'x-js')
 # Enable/disable sensitive data detection
 ENABLE_SENSITIVE_DATA_DETECTION = True
 
+LOAD_MESSAGE = "Burp JS LinkFinder loaded."
+VERSION_NOTICE = "Modified/enhanced version based on original work by Frans Hendrik Botes (2019)"
+
 class BurpExtender(IBurpExtender, IScannerCheck, ITab):
     def registerExtenderCallbacks(self, callbacks):
         self.callbacks = callbacks
@@ -58,9 +61,9 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
         self.initUI()
         self.callbacks.addSuiteTab(self)
         
-        print ("Burp JS LinkFinder loaded.")
-        print ("Copyright (c) 2019 Frans Hendrik Botes")
-        self.outputTxtArea.setText("Burp JS LinkFinder loaded." + "\n" + "Copyright (c) 2019 Frans Hendrik Botes" + "\n")
+        print (LOAD_MESSAGE)
+        print (VERSION_NOTICE)
+        self.outputTxtArea.setText(LOAD_MESSAGE + "\n" + VERSION_NOTICE + "\n")
 
     def initUI(self):
         self.tab = swing.JPanel()
@@ -117,7 +120,7 @@ class BurpExtender(IBurpExtender, IScannerCheck, ITab):
         return self.tab
 
     def clearLog(self, event):
-          self.outputTxtArea.setText("Burp JS LinkFinder loaded." + "\n" + "Copyright (c) 2019 Frans Hendrik Botes" + "\n" )
+          self.outputTxtArea.setText(LOAD_MESSAGE + "\n" + VERSION_NOTICE + "\n" )
 
     def exportLog(self, event):
         chooseFile = JFileChooser()
@@ -302,26 +305,26 @@ class SensitiveDataAnalyzer():
         # JWT Tokens (formato: eyJ...)
         {
             'name': 'JWT Token',
-            'pattern': r'(?:eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})',
+            'pattern': r'(?:eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})',
             'severity': 'High'
         },
         # OAuth/Bearer Tokens
         {
             'name': 'Bearer Token',
-            'pattern': r'(?:bearer|token|access[_-]?token)["\s:=]+([a-zA-Z0-9_\-\.]{20,})',
+            'pattern': r'(?:Authorization|authorization|bearer|access[_-]?token|id[_-]?token|refresh[_-]?token|token)["\s:=]+(?:Bearer\s+)?["\']?([A-Za-z0-9\-._~+/=]{12,400})',
             'severity': 'High',
             'flags': re.IGNORECASE
         },
         # AWS Access Keys (AKIA...)
         {
             'name': 'AWS Access Key',
-            'pattern': r'(?:AKIA[0-9A-Z]{16})',
+            'pattern': r'(?:(?:AKIA|ASIA)[0-9A-Z]{16})',
             'severity': 'High'
         },
         # AWS Secret Keys
         {
             'name': 'AWS Secret Key',
-            'pattern': r'(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?key)["\s:=]+([a-zA-Z0-9/+=]{40})',
+            'pattern': r'(?:aws[_-]?secret(?:[_-]?access)?[_-]?key|AWS_SECRET_ACCESS_KEY|secretAccessKey)["\s:=]+["\']?([A-Za-z0-9/+=]{40})',
             'severity': 'High',
             'flags': re.IGNORECASE
         },
@@ -335,14 +338,14 @@ class SensitiveDataAnalyzer():
         # Database connection strings
         {
             'name': 'Database Connection String',
-            'pattern': r'(?:mysql|postgresql|mongodb|mssql|oracle)://[^\s"\'\`]+',
+            'pattern': r'(?:mysql|postgresql|mongodb(?:\+srv)?|mssql|oracle|redis)://[^\s"\'\`]+',
             'severity': 'High',
             'flags': re.IGNORECASE
         },
         # Private Keys (RSA, SSH)
         {
             'name': 'Private Key',
-            'pattern': r'(?:-----BEGIN (?:RSA |DSA |EC )?PRIVATE KEY-----[\s\S]{100,}-----END (?:RSA |DSA |EC )?PRIVATE KEY-----)',
+            'pattern': r'(?:-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]{64,}?-----END (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----)',
             'severity': 'High'
         },
         # Email addresses (pueden ser sensibles)
@@ -360,13 +363,43 @@ class SensitiveDataAnalyzer():
         # GitHub tokens
         {
             'name': 'GitHub Token',
-            'pattern': r'(?:ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|ghr_[a-zA-Z0-9]{76})',
+            'pattern': r'(?:ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9_]{20,255}|ghr_[A-Za-z0-9_]{40,255}|github_pat_[A-Za-z0-9_]{40,255})',
+            'severity': 'High'
+        },
+        # GitLab tokens
+        {
+            'name': 'GitLab Token',
+            'pattern': r'(?:(?:glpat|gloas|gldt|glrt(?:r)?|glcbt|glptt|glft|glimt|glagent|glwt|glsoat)-[A-Za-z0-9\-_]{20,255})',
+            'severity': 'High'
+        },
+        # Google credentials
+        {
+            'name': 'Google Credential',
+            'pattern': r'(?:AIza[0-9A-Za-z\-_]{35}|GOCSPX-[0-9A-Za-z\-_]{20,}|ya29\.[0-9A-Za-z\-_]+)',
+            'severity': 'High'
+        },
+        # Slack tokens and webhooks
+        {
+            'name': 'Slack Secret',
+            'pattern': r'(?:xox(?:a|b|p|r|s|e|o)(?:-[0-9A-Za-z]{1,}){2,}|https://hooks\.slack\.com/services/[A-Za-z0-9/_-]+)',
             'severity': 'High'
         },
         # Stripe keys
         {
             'name': 'Stripe Key',
-            'pattern': r'(?:sk_live_[a-zA-Z0-9]{24,}|pk_live_[a-zA-Z0-9]{24,}|sk_test_[a-zA-Z0-9]{24,}|pk_test_[a-zA-Z0-9]{24,})',
+            'pattern': r'(?:(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,})',
+            'severity': 'High'
+        },
+        # OpenAI API keys
+        {
+            'name': 'OpenAI API Key',
+            'pattern': r'(?:sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,})',
+            'severity': 'High'
+        },
+        # Anthropic API keys
+        {
+            'name': 'Anthropic API Key',
+            'pattern': r'(?:sk-ant-(?:api\d{2}-)?[A-Za-z0-9_\-]{20,})',
             'severity': 'High'
         },
         # Generic secret/credential patterns

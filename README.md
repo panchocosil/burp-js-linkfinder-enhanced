@@ -14,15 +14,21 @@ Enhanced Burp Suite extension for passively scanning JavaScript files to find en
 - **API Keys**: Detects API keys when explicitly named (`api_key`, `apikey`, `apiKey`, etc.)
 - **JWT Tokens**: Identifies JSON Web Tokens
 - **OAuth/Bearer Tokens**: Finds OAuth and Bearer authentication tokens
-- **AWS Credentials**: Detects AWS Access Keys and Secret Keys
-- **Database Connections**: Finds hardcoded database connection strings
-- **Private Keys**: Detects RSA/SSH private keys
-- **GitHub Tokens**: Identifies GitHub personal access tokens
-- **Stripe Keys**: Finds Stripe API keys (live and test)
+- **AWS Credentials**: Detects AWS Access Keys and Secret Keys, including temporary key IDs
+- **Database Connections**: Finds hardcoded database connection strings, including `mongodb+srv` and `redis`
+- **Private Keys**: Detects RSA, DSA, EC, and OpenSSH private keys
+- **GitHub Tokens**: Identifies classic, OAuth, installation, refresh, and fine-grained PAT tokens
+- **GitLab Tokens**: Identifies personal, deploy, runner, CI, trigger, feed, agent, workspace, and SCIM tokens
+- **Google Credentials**: Detects Google API keys and OAuth secrets/tokens
+- **Slack Secrets**: Finds Slack tokens and incoming webhooks
+- **Stripe Keys**: Finds Stripe API keys (live, test, and restricted)
+- **OpenAI Keys**: Detects OpenAI project, service account, admin, and standard API keys
+- **Anthropic Keys**: Detects Anthropic API keys
 - **Hardcoded Passwords**: Detects hardcoded passwords
 - **URLs with Credentials**: Finds URLs containing embedded credentials
-- **Email Addresses**: Identifies email addresses (configurable severity)
+- **Email Addresses**: Identifies email addresses
 - **Generic Secrets**: Catches other credential patterns
+- **Hex Hashes**: Detects standalone MD5, SHA1, and SHA256-style hex values
 
 ### Improvements Over Original
 - ✅ Enhanced regex patterns for better link detection
@@ -114,11 +120,16 @@ Edit the `SENSITIVE_PATTERNS` list in the `SensitiveDataAnalyzer` class to add o
 ### Sensitive Data Detected
 - API Keys: `api_key="abc123..."` (only when explicitly named)
 - JWT Tokens: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
-- AWS Keys: `AKIA...`, `aws_secret_access_key="..."`
-- Database URLs: `mysql://user:pass@host:3306/db`
-- Private Keys: `-----BEGIN RSA PRIVATE KEY-----...`
-- GitHub Tokens: `ghp_...`, `gho_...`
-- Stripe Keys: `sk_live_...`, `pk_live_...`
+- AWS Keys: `AKIA...`, `ASIA...`, `aws_secret_access_key="..."`
+- Database URLs: `mysql://...`, `mongodb+srv://...`, `redis://...`
+- Private Keys: `-----BEGIN RSA PRIVATE KEY-----...`, `-----BEGIN OPENSSH PRIVATE KEY-----...`
+- GitHub Tokens: `ghp_...`, `gho_...`, `github_pat_...`
+- GitLab Tokens: `glpat-...`, `gldt-...`, `glrt-...`
+- Google Credentials: `AIza...`, `GOCSPX-...`, `ya29....`
+- Slack Secrets: `xoxb-...`, `https://hooks.slack.com/services/...`
+- Stripe Keys: `sk_live_...`, `pk_test_...`, `rk_live_...`
+- OpenAI Keys: `sk-proj-...`, `sk-svcacct-...`
+- Anthropic Keys: `sk-ant-...`
 
 ## 🛠️ Technical Details
 
@@ -168,8 +179,8 @@ The extension filters out common JavaScript function names and patterns to reduc
 
 ## 📄 License
 
-Copyright (c) 2019 Frans Hendrik Botes (Original)
-Copyright (c) 2026 [Your Name] (Enhanced Version)
+Original work copyright (c) 2019 Frans Hendrik Botes.
+This repository contains a modified/enhanced version and is not the original release.
 
 This project is provided as-is for security research and educational purposes.
 
@@ -187,4 +198,4 @@ For issues or questions, please open an issue on the GitHub repository.
 
 ---
 
-**Note**: This is an enhanced version of the original BurpJSLinkFinder extension. All original functionality is preserved, with significant additions for sensitive data detection.
+**Note**: This repository contains a modified/enhanced version of BurpJSLinkFinder and is not the original release. It preserves the original idea and adds sensitive data detection and broader pattern coverage.
